@@ -43,14 +43,7 @@ if __name__ == '__main__':
 
 	img_rows, img_cols = 224, 224
 	X_test, X_test_id = load_test(img_rows, img_cols)
-	# X_test = X_test.astype('float32')
 	X_test = np.array(X_test, dtype=np.uint8)
-
-  # mean_pixel = [103.939, 116.779, 123.68]
-
-  # for c in range(3):
-  #     print 'subtracting {c}'.format(c=mean_pixel[0])
-  #     X_test[:, c, :, :] = X_test[:, c, :, :] - mean_pixel[c]
 
 	f = h5py.File(os.path.join(cache_root, 'test_224_224.h5'),'w')
 	f['X_test'] = X_test
