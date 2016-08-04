@@ -7,7 +7,6 @@ import numpy as np
 
 import os
 import glob
-import cv2
 import math
 import h5py
 import datetime
@@ -21,6 +20,7 @@ from keras.layers.convolutional import Convolution2D, MaxPooling2D, \
                                        ZeroPadding2D
 
 
+from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import SGD, Adam
 from keras.utils import np_utils
 from keras.models import model_from_json
@@ -78,23 +78,31 @@ def vgg_std16_model(img_rows, img_cols):
     model.add(Dense(1000, activation='softmax'))
     model.load_weights('../../models/vgg16_weights.h5')
 
-    model.layers.pop() # Get rid of the classification layer
+    model.layers.pop()
+    model.layers.pop()
+    model.layers.pop()
+    model.outputs = [model.layers[-1].output]
+    model.layers[-1].outbound_nodes = []
+    model.add(Dense(10, activation='softmax'))
+
+    # model.layers.pop() # Get rid of the classification layer
     # model.layers.pop() # Get rid of the dropout layer
     # model.outputs = [model.layers[-1].output]
     # model.layers[-1].outbound_nodes = []
 
-    for layer in model.layers[:-1]:
-        layer.trainable = False
+    # for layer in model.layers[:-4]:
+    #     layer.trainable = False
 
     # model.add(Dropout(0.5))
 
-    model.add(Dense(10, activation='softmax'))
+    # model.add(Dense(10, activation='softmax'))
 
-    # adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+    adam = Adam(lr=1e-5, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     # Learning rate is changed to 0.001
 
-    sgd = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(optimizer=sgd,
+    # sgd = SGD(lr=1e-5, decay=0, momentum=0, nesterov=False)
+
+    model.compile(optimizer=adam,
     	loss='categorical_crossentropy',
     	metrics=['accuracy'])
     return model
@@ -111,10 +119,10 @@ def save_model(model, cross):
 if __name__ == "__main__":
 
   img_rows, img_cols = 224, 224
-  batch_size = 32
+  batch_size = 24
   nb_epoch = 20
   num_images = 79726
-  n_folds = 2
+  n_folds = 26
   np.random.seed(random_state)
 
   data_root = os.path.join(os.path.expanduser('~'), 'workspace', 'kaggle_statefarm', 'data')
@@ -128,13 +136,25 @@ if __name__ == "__main__":
                shuffle=True, random_state=random_state)
 
   print 'reading train'
-  f = h5py.File(os.path.join(data_root, 'train_224_224.h5'),'r')
+  f = h5py.File(os.path.join(data_root, 'train2_224_224.h5'), 'r')
 
   now = datetime.datetime.now()
   suffix = str(now.strftime("%Y-%m-%d-%H-%M"))
 
   ind = 0
+
   for train_drivers, test_drivers in kf:
+    datagen = ImageDataGenerator(
+    featurewise_center=False,
+    featurewise_std_normalization=False,
+    rotation_range=30,
+    width_shift_range=0.3,
+    height_shift_range=0.3,
+    zoom_range=0.3,
+    channel_shift_range=30,
+    shear_range=0.3,
+    # zca_whitening=True,
+    horizontal_flip=False)
     y_train = []
     X_train = []
     y_val = []
@@ -180,17 +200,32 @@ if __name__ == "__main__":
     print X_train.shape, y_train.shape
     print X_val.shape, y_val.shape
 
+
     print 'creating model'
     model = vgg_std16_model(img_rows, img_cols)
 
+    # print 'fitting fit_generator'
+    # datagen.fit(X_train)
+
     print 'fitting model'
-    model.fit(X_train, y_train, batch_size=batch_size,
+    model.fit_generator(datagen.flow(X_train,
+      y_train,
+      batch_size=batch_size,
+      shuffle=True),
             nb_epoch=nb_epoch,
             verbose=1,
             validation_data=(X_val, y_val),
-            shuffle=True)
+            samples_per_epoch=len(X_train),
+            # shuffle=True
+            )
+    print 'saving model'
+    # # pickle.dump(model, open( "{ind}_{batch}_{epoch}.p".format(ind=ind, batch=batch_size, epoch=nb_epoch), "wb" ))
+    save_model(model, "{ind}_{batch}_{epoch}_{suffix}".format(ind=ind,
+      batch=batch_size,
+      epoch=nb_epoch,
+      suffix=suffix))
 
-    f_test = h5py.File(os.path.join(cache_path, 'test_224_224.h5'),'r')
+    f_test = h5py.File(os.path.join(cache_path, 'test2_224_224.h5'), 'r')
 
     X_test_id = np.array(f_test['X_test_id'])
 
@@ -220,7 +255,7 @@ if __name__ == "__main__":
 
       X_test = X_test.astype(np.float32)
 
-      preds += [model.predict(X_test, batch_size=32, verbose=1)]
+      preds += [model.predict(X_test, batch_size=48, verbose=1)]
 
     predictions = np.vstack(preds)
 
